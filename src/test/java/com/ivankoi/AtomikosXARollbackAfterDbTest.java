@@ -1,22 +1,40 @@
 package com.ivankoi;
 
-import javax.sql.DataSource;
-
-import org.apache.camel.builder.RouteBuilder;
-import org.apache.camel.test.spring.CamelSpringTestSupport;
+import org.apache.camel.CamelContext;
+import org.apache.camel.ConsumerTemplate;
+import org.apache.camel.ProducerTemplate;
+import org.apache.camel.test.spring.CamelSpringDelegatingTestContextLoader;
+import org.apache.camel.test.spring.CamelSpringJUnit4ClassRunner;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.springframework.context.support.AbstractApplicationContext;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ContextConfiguration;
+
+import javax.sql.DataSource;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 /**
  * @version $Revision$
  */
-public class AtomikosXARollbackAfterDbTest extends CamelSpringTestSupport {
+@RunWith(CamelSpringJUnit4ClassRunner.class)
+@ContextConfiguration(locations = {"classpath:spring-context.xml"}, loader = CamelSpringDelegatingTestContextLoader.class)
+public class AtomikosXARollbackAfterDbTest {
 
     private JdbcTemplate jdbc;
+
+    @Autowired
+    ProducerTemplate template;
+
+    @Autowired
+    ConsumerTemplate consumer;
+
+    @Autowired
+    CamelContext context;
 
     @Before
     public void setupDatabase() throws Exception {
@@ -30,11 +48,6 @@ public class AtomikosXARollbackAfterDbTest extends CamelSpringTestSupport {
     @After
     public void dropDatabase() throws Exception {
         jdbc.execute("drop table partner_metric");
-    }
-
-    @Override
-    protected AbstractApplicationContext createApplicationContext() {
-        return new ClassPathXmlApplicationContext("spring-context.xml");
     }
 
     @Test
@@ -55,22 +68,6 @@ public class AtomikosXARollbackAfterDbTest extends CamelSpringTestSupport {
         // now check that the message is on the queue by consuming it again
         String dlq = consumer.receiveBodyNoWait("activemq:queue:ActiveMQ.DLQ", String.class);
         assertNotNull("Should not lose message", dlq);
-    }
-
-    @Override
-    protected RouteBuilder createRouteBuilder() throws Exception {
-        return new RouteBuilder() {
-            @Override
-            public void configure() throws Exception {
-                from("activemq:queue:partners")
-                        .transacted()
-                        .log("*** before database ***")
-                        .bean(PartnerServiceBean.class, "toSql")
-                        .to("jdbc:myDataSource?resetAutoCommit=false") // the usage of the resetAutoCommit option (available since 2.9.0) has the side effect of JDBC commit
-                        .log("*** after database ***")                 // not being called through JdbcProducer (We need this as we make use of global transaction boundaries)
-                        .throwException(new IllegalArgumentException("Forced failure after DB"));
-            }
-        };
     }
 
 }
